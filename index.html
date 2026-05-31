@@ -6,8 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
-    --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#c9d1d9; --mute:#8b949e;
-    --acc:#58a6ff; --warn:#f0883e; --good:#3fb950;
+    --bg:#fff5f7; --panel:#ffffff; --line:#fce4ec; --fg:#1f1f1f; --mute:#666;
+    --acc:#e84393; --warn:#e67e22; --good:#27ae60;
     --src-cafe:#03C75A; --src-igp:#E1306C; --src-igo:#5851DB;
     --src-yt:#FF0000; --src-ytmisc:#888;
   }
@@ -40,7 +40,10 @@
   .card .meta .ttl{color:var(--fg);font-weight:600;max-height:30px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .card .meta .sub{color:var(--mute);margin-top:3px;display:flex;justify-content:space-between;gap:6px}
   .card .tags{padding:0 8px 6px;display:flex;flex-wrap:wrap;gap:3px}
-  .tag-chip{font-size:9px;padding:1px 5px;border-radius:8px;background:#1f2937;color:#9ca3af}
+  .tag-chip{font-size:9px;padding:1px 5px;border-radius:8px;background:#fce4ec;color:#c2185b}
+  .card{box-shadow:0 1px 3px rgba(225,29,72,.06)}
+  .card:hover{box-shadow:0 4px 12px rgba(225,29,72,.15)}
+  header{box-shadow:0 1px 3px rgba(0,0,0,.05)}
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:100;align-items:center;justify-content:center;padding:20px}
   .modal.show{display:flex}
   .modal .box{background:var(--panel);border-radius:8px;max-width:1100px;width:100%;max-height:90vh;overflow:auto;padding:20px;position:relative}
@@ -80,9 +83,15 @@
   <button class="menu-btn" onclick="toggleMenu()" aria-label="필터 메뉴">☰</button><h1>🎬 전유진 편집 라이브러리</h1>
   <div class="stats" id="hdr-stats">로딩…</div>
   <div class="nav" style="margin-left:auto">
-    <a href="../../jin_fan_gallery/viewer/index.html">팬 갤러리 (B) →</a>
+    <a href="https://hgs599079-code.github.io/tenten-saranbang/" target="_blank" rel="noopener">텐텐 사랑방 →</a>
   </div>
 </header>
+<div id="howto" style="background:#fff8e1;color:#5d4037;padding:10px 14px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #ffe082">
+  <div>
+    💡 <b>사용법</b> &nbsp;·&nbsp; 카드 클릭 = YouTube/인스타에서 재생 &nbsp;·&nbsp; 좌측 ☰ 또는 필터 = 출처·연도·카테고리 골라보기 &nbsp;·&nbsp; 카드 위 마우스 = 영상 설명
+  </div>
+  <button type="button" onclick="document.getElementById('howto').style.display='none'" style="background:#fff;border:1px solid #ffcc80;color:#5d4037;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px">닫기 ✕</button>
+</div>
 <div class="layout">
   <aside id="filters"></aside>
   <div class="backdrop" id="backdrop" onclick="toggleMenu()"></div>
@@ -91,12 +100,29 @@
       <div class="count" id="count">…</div>
       <div>
         정렬:
-        <select id="sort">
-          <option value="date_desc">업로드일 최신순</option>
-          <option value="date_asc">업로드일 오래된순</option>
-          <option value="duration_desc">길이 긴순</option>
-          <option value="duration_asc">길이 짧은순</option>
-          <option value="views_desc">조회수 높은순</option>
+        <select id="sort" title="정렬 기준 선택">
+          <optgroup label="📅 날짜">
+            <option value="date_desc">업로드일 최신순</option>
+            <option value="date_asc">업로드일 오래된순</option>
+          </optgroup>
+          <optgroup label="👁 조회수">
+            <option value="views_desc">조회수 높은순</option>
+            <option value="views_asc">조회수 낮은순 (숨은 명작)</option>
+          </optgroup>
+          <optgroup label="⏱ 길이">
+            <option value="duration_desc">길이 긴순 (풀버전)</option>
+            <option value="duration_asc">길이 짧은순 (Shorts·셀카)</option>
+          </optgroup>
+          <optgroup label="🔤 제목">
+            <option value="title_asc">제목 가나다순</option>
+            <option value="title_desc">제목 역순</option>
+          </optgroup>
+          <optgroup label="⭐ 화질">
+            <option value="quality_desc">화질 좋은순 (A→B→C)</option>
+          </optgroup>
+          <optgroup label="🎲 발견">
+            <option value="random">랜덤 (오늘의 추천)</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -127,16 +153,19 @@ function cardHtml(c){
   const ttl = c.title || c.filename || "";
   const date = c.upload_date || "";
   const tags = (c.fan_categories||[]).slice(0,4).map(t=>`<span class="tag-chip">${t}</span>`).join("");
-  // 카페·메타전용(로컬 X) 영상은 카드 클릭 = 원본 새창 직행
   const isCafe = c.source === 'cafe';
-  const directOpen = !!c.source_url;  // 외부 공개판: 모든 클릭 새창
+  const directOpen = !!c.source_url;
   const action = directOpen ? `onclick="window.open('${c.source_url}','_blank')" style="cursor:pointer"` : `onclick="openModal('${c.clip_id}')"`;
-  return `<div class="card" ${action}>
+  // 카드 hover 툴팁 — 영상 제목 + 짧은 설명 + 클릭 안내
+  const desc = (c.description || "").replace(/[\r\n]+/g," ").slice(0,200);
+  const where = c.source==='cafe' ? '온리유 카페' : (c.source && c.source.startsWith('ig') ? '인스타그램' : 'YouTube');
+  const tip = `${ttl}\n\n${desc ? desc + '\n\n' : ''}━━━━━━━━━━\n클릭하면 ${where}에서 재생됩니다`;
+  return `<div class="card" ${action} title="${tip.replace(/"/g,'&quot;')}">
     <div class="thumb ${aspectClass}" style="background-image:url('${thumb}')">
       ${srcBadge(c.source)}
       ${len?`<span class="badge-len">${len}</span>`:""}
       ${c.quality_grade==='A'?`<span class="badge-rep">★ ${c.quality_grade}</span>`:""}
-      ${directOpen?`<span class="badge-len" style="left:5px;right:auto;top:auto;bottom:5px;background:#03C75A">↗ 원본</span>`:""}
+      ${directOpen?`<span class="badge-len" style="left:5px;right:auto;top:auto;bottom:5px;background:#03C75A">▶ 클릭</span>`:""}
     </div>
     <div class="meta">
       <div class="ttl">${ttl.replace(/</g,"&lt;")}</div>
@@ -170,19 +199,63 @@ function makeCheckboxGroup(title, key, items, labels){
   return html;
 }
 
+function resetAllFilters(){
+  STATE.sources = new Set(SOURCES);
+  STATE.subcat = null;
+  STATE.cats = new Set(CATS);
+  STATE.years = new Set(YEARS);
+  STATE.aspects = new Set(ASPECTS);
+  STATE.quals = new Set(QUALS);
+  STATE.search = "";
+  document.querySelectorAll("#filters input[type=checkbox]").forEach(cb=>{ cb.checked = true; });
+  const sb = document.getElementById("search");
+  if(sb) sb.value = "";
+}
+
+function applySourceFilter(value){
+  if(value==="__ALL__"){
+    resetAllFilters();
+  } else {
+    STATE.sources = new Set([value]);
+    STATE.subcat = null;
+  }
+  renderSubFilter(value);
+  render();
+}
+
 function renderFilters(){
   const srcLabels = SOURCES.map(s=>(SRC_COLORS[s]&&SRC_COLORS[s].label)||s);
   const catLabels = CATS.map(s=>{
     const c = D.fan_categories.categories.find(x=>x.slug===s);
     return c?c.label:s;
   });
+  // 출처 = 라디오 (한 번에 하나만) + "전체" 옵션
+  let srcHtml = `<h3>출처 <span style="font-size:9px;color:var(--mute)">(하나 선택)</span></h3>`;
+  srcHtml += `<label><input type=radio name=src value="__ALL__" checked> <b>전체</b></label>`;
+  SOURCES.forEach((s,i)=>{
+    const n = D.clips.filter(c=>c.source===s).length;
+    srcHtml += `<label><input type=radio name=src value="${s}"> ${srcLabels[i]} <span style="color:var(--mute);font-size:10px">(${n})</span></label>`;
+  });
+  srcHtml += `<div id="subfilter" style="margin-top:6px;padding-left:8px;border-left:2px solid var(--line)"></div>`;
+
   document.getElementById("filters").innerHTML =
     `<input type=text id=search placeholder="제목·설명 검색"/>` +
-    makeCheckboxGroup("출처","sources",SOURCES,srcLabels) +
+    srcHtml +
     makeCheckboxGroup("카테고리","cats",CATS,catLabels) +
     makeCheckboxGroup("연도","years",YEARS) +
     makeCheckboxGroup("종횡비","aspects",ASPECTS) +
     makeCheckboxGroup("화질","quals",QUALS);
+
+  // 라디오 (출처) 이벤트
+  document.querySelectorAll("#filters input[type=radio][name=src]").forEach(rb=>{
+    rb.addEventListener("click", e=>{
+      if(rb.value==="__ALL__") applySourceFilter(rb.value);
+    });
+    rb.addEventListener("change", e=>{
+      applySourceFilter(rb.value);
+    });
+  });
+  // 체크박스 (나머지) 이벤트
   document.querySelectorAll("#filters input[type=checkbox]").forEach(cb=>{
     cb.addEventListener("change",e=>{
       const k=cb.dataset.k, v=cb.dataset.v;
@@ -194,10 +267,46 @@ function renderFilters(){
   document.getElementById("sort").addEventListener("change",render);
 }
 
+// 출처 선택 시 그 출처 안의 카테고리 sub-filter 표시
+function renderSubFilter(src){
+  const box = document.getElementById("subfilter");
+  if(!box) return;
+  if(src==="__ALL__" || !src){ box.innerHTML=""; STATE.subcat=null; return; }
+  // 해당 출처 영상들이 가진 카테고리 집계
+  const catCount = {};
+  D.clips.filter(c=>c.source===src).forEach(c=>{
+    (c.fan_categories||[]).forEach(cat=>{ catCount[cat] = (catCount[cat]||0)+1; });
+  });
+  const list = Object.entries(catCount).sort((a,b)=>b[1]-a[1]);
+  if(list.length===0){ box.innerHTML=""; return; }
+  const catLabel = slug => {
+    const c = D.fan_categories.categories.find(x=>x.slug===slug);
+    return c ? c.label : slug;
+  };
+  const catColor = slug => {
+    const c = D.fan_categories.categories.find(x=>x.slug===slug);
+    return c ? c.color : '#888';
+  };
+  const total = D.clips.filter(c=>c.source===src).length;
+  let html = `<div style="font-size:10px;color:var(--mute);margin:4px 0">▼ 카테고리 (하나 선택)</div>`;
+  html += `<label style="font-size:11px"><input type=radio name=subcat value="__ALL__" checked> <b>전체</b> (${total})</label>`;
+  list.forEach(([slug,n])=>{
+    html += `<label style="font-size:11px"><input type=radio name=subcat value="${slug}"> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${catColor(slug)};vertical-align:middle;margin-right:3px"></span>${catLabel(slug)} <span style="color:var(--mute)">(${n})</span></label>`;
+  });
+  box.innerHTML = html;
+  document.querySelectorAll("input[type=radio][name=subcat]").forEach(rb=>{
+    rb.addEventListener("change", e=>{
+      STATE.subcat = rb.value==="__ALL__" ? null : rb.value;
+      render();
+    });
+  });
+}
+
 function filtered(){
   const q = STATE.search;
   return D.clips.filter(c=>{
     if(!STATE.sources.has(c.source)) return false;
+    if(STATE.subcat && !(c.fan_categories||[]).includes(STATE.subcat)) return false;
     if(!STATE.aspects.has(c.aspect||"unknown")) return false;
     if(!STATE.quals.has(c.quality_grade||"C")) return false;
     const y = (c.upload_date||"").slice(0,4);
@@ -215,14 +324,29 @@ function filtered(){
 function render(){
   const list = filtered();
   const sort = document.getElementById("sort").value;
-  list.sort((a,b)=>{
-    if(sort==="date_desc") return (b.upload_date||"").localeCompare(a.upload_date||"");
-    if(sort==="date_asc") return (a.upload_date||"").localeCompare(b.upload_date||"");
-    if(sort==="duration_desc") return (b.duration||0)-(a.duration||0);
-    if(sort==="duration_asc") return (a.duration||0)-(b.duration||0);
-    if(sort==="views_desc") return (b.view_count||0)-(a.view_count||0);
-    return 0;
-  });
+  if(sort==="random"){
+    // 매번 같은 결과 방지 위해 셔플
+    for(let i=list.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [list[i],list[j]] = [list[j],list[i]];
+    }
+  } else {
+    list.sort((a,b)=>{
+      if(sort==="date_desc") return (b.upload_date||"").localeCompare(a.upload_date||"");
+      if(sort==="date_asc") return (a.upload_date||"").localeCompare(b.upload_date||"");
+      if(sort==="duration_desc") return (b.duration||0)-(a.duration||0);
+      if(sort==="duration_asc") return (a.duration||0)-(b.duration||0);
+      if(sort==="views_desc") return (b.view_count||0)-(a.view_count||0);
+      if(sort==="views_asc") return (a.view_count||0)-(b.view_count||0);
+      if(sort==="title_asc") return (a.title||"").localeCompare(b.title||"","ko");
+      if(sort==="title_desc") return (b.title||"").localeCompare(a.title||"","ko");
+      if(sort==="quality_desc"){
+        const rank = {A:0, B:1, C:2};
+        return (rank[a.quality_grade]??9) - (rank[b.quality_grade]??9);
+      }
+      return 0;
+    });
+  }
   const limit = 500;  // 페이지 로딩 보호
   const shown = list.slice(0,limit);
   document.getElementById("grid").innerHTML = shown.map(cardHtml).join("");
