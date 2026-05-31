@@ -190,123 +190,148 @@ const STATE = {
   search:""
 };
 
-function makeCheckboxGroup(title, key, items, labels){
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+}
+
+function availableCats(){
+  const found = new Set();
+  D.clips.forEach(c=>{
+    if(!STATE.sources.has(c.source)) return;
+    (c.fan_categories||[]).forEach(cat=>{
+      if(CATS.includes(cat)) found.add(cat);
+    });
+  });
+  return CATS.filter(cat=>found.has(cat));
+}
+
+function itemsForKey(key){
+  if(key==="sources") return SOURCES;
+  if(key==="cats") return availableCats();
+  if(key==="years") return YEARS;
+  if(key==="aspects") return ASPECTS;
+  if(key==="quals") return QUALS;
+  return [];
+}
+
+function groupCount(key, item){
+  if(key==="sources") return D.clips.filter(c=>c.source===item).length;
+  if(key==="cats") return D.clips.filter(c=>STATE.sources.has(c.source) && (c.fan_categories||[]).includes(item)).length;
+  return null;
+}
+
+function makeCheckboxGroup(title, key, items, labels, opts={}){
   let html = `<h3>${title}</h3>`;
+  if(opts.note) html += `<div style="font-size:10px;color:var(--mute);margin:2px 0 4px">${opts.note}</div>`;
+  const selectedCount = items.filter(it=>STATE[key].has(it)).length;
+  const allChecked = items.length > 0 && selectedCount === items.length;
+  const allCount = key==="sources" || key==="cats" ? items.reduce((sum,it)=>sum + (groupCount(key,it)||0),0) : null;
+  html += `<label><input type=checkbox data-k="${key}" data-role="all" ${allChecked?"checked":""}> <b>전체</b>${allCount!==null?` <span style="color:var(--mute);font-size:10px">(${allCount})</span>`:""}</label>`;
+  if(items.length===0){
+    html += `<div style="font-size:11px;color:var(--mute);padding:4px 0 6px">선택 가능한 항목 없음</div>`;
+    return html;
+  }
   items.forEach((it,i)=>{
-    const lbl = labels ? labels[i] : it;
-    html += `<label><input type=checkbox checked data-k="${key}" data-v="${it}"> ${lbl}</label>`;
+    const lbl = labels ? labels[i] : esc(it);
+    const checked = STATE[key].has(it) ? "checked" : "";
+    const count = groupCount(key,it);
+    html += `<label><input type=checkbox ${checked} data-k="${key}" data-role="item" data-v="${esc(it)}"> ${lbl}${count!==null?` <span style="color:var(--mute);font-size:10px">(${count})</span>`:""}</label>`;
   });
   return html;
 }
 
 function resetAllFilters(){
   STATE.sources = new Set(SOURCES);
-  STATE.subcat = null;
-  STATE.cats = new Set(CATS);
+  STATE.cats = new Set(availableCats());
   STATE.years = new Set(YEARS);
   STATE.aspects = new Set(ASPECTS);
   STATE.quals = new Set(QUALS);
   STATE.search = "";
-  document.querySelectorAll("#filters input[type=checkbox]").forEach(cb=>{ cb.checked = true; });
-  const sb = document.getElementById("search");
-  if(sb) sb.value = "";
 }
 
-function applySourceFilter(value){
-  if(value==="__ALL__"){
-    resetAllFilters();
-  } else {
-    STATE.sources = new Set([value]);
-    STATE.subcat = null;
+function syncGroupControls(key){
+  const items = itemsForKey(key);
+  const state = STATE[key];
+  document.querySelectorAll(`#filters input[data-k="${key}"][data-role="item"]`).forEach(cb=>{
+    cb.checked = state.has(cb.dataset.v);
+  });
+  const all = document.querySelector(`#filters input[data-k="${key}"][data-role="all"]`);
+  if(all){
+    const selectedCount = items.filter(it=>state.has(it)).length;
+    all.checked = items.length > 0 && selectedCount === items.length;
+    all.indeterminate = selectedCount > 0 && selectedCount < items.length;
   }
-  renderSubFilter(value);
+}
+
+function syncAllGroups(){
+  ["sources","cats","years","aspects","quals"].forEach(syncGroupControls);
+}
+
+function setWholeGroup(key, checked){
+  if(key==="sources"){
+    if(checked){
+      // 출처 전체는 모든 필터와 검색을 함께 초기화한다.
+      resetAllFilters();
+    } else {
+      STATE.sources = new Set();
+      STATE.cats = new Set();
+    }
+    renderFilters();
+    render();
+    return;
+  }
+  const items = itemsForKey(key);
+  STATE[key] = checked ? new Set(items) : new Set();
+  syncGroupControls(key);
+  render();
+}
+
+function setOneGroupItem(key, value, checked){
+  checked ? STATE[key].add(value) : STATE[key].delete(value);
+  if(key==="sources"){
+    STATE.cats = new Set(availableCats());
+    renderFilters();
+    render();
+    return;
+  }
+  syncGroupControls(key);
   render();
 }
 
 function renderFilters(){
-  const srcLabels = SOURCES.map(s=>(SRC_COLORS[s]&&SRC_COLORS[s].label)||s);
-  const catLabels = CATS.map(s=>{
+  const srcLabels = SOURCES.map(s=>esc((SRC_COLORS[s]&&SRC_COLORS[s].label)||s));
+  const visibleCats = availableCats();
+  const catLabels = visibleCats.map(s=>{
     const c = D.fan_categories.categories.find(x=>x.slug===s);
-    return c?c.label:s;
+    return c?`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};vertical-align:middle;margin-right:3px"></span>${esc(c.label)}`:esc(s);
   });
-  // 출처 = 라디오 (한 번에 하나만) + "전체" 옵션
-  let srcHtml = `<h3>출처 <span style="font-size:9px;color:var(--mute)">(하나 선택)</span></h3>`;
-  srcHtml += `<label><input type=radio name=src value="__ALL__" checked> <b>전체</b></label>`;
-  SOURCES.forEach((s,i)=>{
-    const n = D.clips.filter(c=>c.source===s).length;
-    srcHtml += `<label><input type=radio name=src value="${s}"> ${srcLabels[i]} <span style="color:var(--mute);font-size:10px">(${n})</span></label>`;
-  });
-  srcHtml += `<div id="subfilter" style="margin-top:6px;padding-left:8px;border-left:2px solid var(--line)"></div>`;
 
   document.getElementById("filters").innerHTML =
-    `<input type=text id=search placeholder="제목·설명 검색"/>` +
-    srcHtml +
-    makeCheckboxGroup("카테고리","cats",CATS,catLabels) +
+    `<input type=text id=search placeholder="제목·설명 검색" value="${esc(STATE.search)}"/>` +
+    makeCheckboxGroup("출처","sources",SOURCES,srcLabels,{note:"전체 해제 = 0개 · 하나 선택 = 그 출처만"}) +
+    `<div style="margin-top:6px;padding-left:8px;border-left:2px solid var(--line)">` +
+    makeCheckboxGroup("하위 카테고리","cats",visibleCats,catLabels,{note:"선택된 출처 안에서 다시 고르기"}) +
+    `</div>` +
     makeCheckboxGroup("연도","years",YEARS) +
     makeCheckboxGroup("종횡비","aspects",ASPECTS) +
     makeCheckboxGroup("화질","quals",QUALS);
 
-  // 라디오 (출처) 이벤트
-  document.querySelectorAll("#filters input[type=radio][name=src]").forEach(rb=>{
-    rb.addEventListener("click", e=>{
-      if(rb.value==="__ALL__") applySourceFilter(rb.value);
-    });
-    rb.addEventListener("change", e=>{
-      applySourceFilter(rb.value);
-    });
-  });
-  // 체크박스 (나머지) 이벤트
   document.querySelectorAll("#filters input[type=checkbox]").forEach(cb=>{
     cb.addEventListener("change",e=>{
-      const k=cb.dataset.k, v=cb.dataset.v;
-      cb.checked ? STATE[k].add(v) : STATE[k].delete(v);
-      render();
+      const k=cb.dataset.k;
+      if(cb.dataset.role==="all") setWholeGroup(k, cb.checked);
+      else setOneGroupItem(k, cb.dataset.v, cb.checked);
     });
   });
   document.getElementById("search").addEventListener("input",e=>{STATE.search=e.target.value.toLowerCase();render()});
   document.getElementById("sort").addEventListener("change",render);
-}
-
-// 출처 선택 시 그 출처 안의 카테고리 sub-filter 표시
-function renderSubFilter(src){
-  const box = document.getElementById("subfilter");
-  if(!box) return;
-  if(src==="__ALL__" || !src){ box.innerHTML=""; STATE.subcat=null; return; }
-  // 해당 출처 영상들이 가진 카테고리 집계
-  const catCount = {};
-  D.clips.filter(c=>c.source===src).forEach(c=>{
-    (c.fan_categories||[]).forEach(cat=>{ catCount[cat] = (catCount[cat]||0)+1; });
-  });
-  const list = Object.entries(catCount).sort((a,b)=>b[1]-a[1]);
-  if(list.length===0){ box.innerHTML=""; return; }
-  const catLabel = slug => {
-    const c = D.fan_categories.categories.find(x=>x.slug===slug);
-    return c ? c.label : slug;
-  };
-  const catColor = slug => {
-    const c = D.fan_categories.categories.find(x=>x.slug===slug);
-    return c ? c.color : '#888';
-  };
-  const total = D.clips.filter(c=>c.source===src).length;
-  let html = `<div style="font-size:10px;color:var(--mute);margin:4px 0">▼ 카테고리 (하나 선택)</div>`;
-  html += `<label style="font-size:11px"><input type=radio name=subcat value="__ALL__" checked> <b>전체</b> (${total})</label>`;
-  list.forEach(([slug,n])=>{
-    html += `<label style="font-size:11px"><input type=radio name=subcat value="${slug}"> <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${catColor(slug)};vertical-align:middle;margin-right:3px"></span>${catLabel(slug)} <span style="color:var(--mute)">(${n})</span></label>`;
-  });
-  box.innerHTML = html;
-  document.querySelectorAll("input[type=radio][name=subcat]").forEach(rb=>{
-    rb.addEventListener("change", e=>{
-      STATE.subcat = rb.value==="__ALL__" ? null : rb.value;
-      render();
-    });
-  });
+  syncAllGroups();
 }
 
 function filtered(){
   const q = STATE.search;
   return D.clips.filter(c=>{
     if(!STATE.sources.has(c.source)) return false;
-    if(STATE.subcat && !(c.fan_categories||[]).includes(STATE.subcat)) return false;
     if(!STATE.aspects.has(c.aspect||"unknown")) return false;
     if(!STATE.quals.has(c.quality_grade||"C")) return false;
     const y = (c.upload_date||"").slice(0,4);
