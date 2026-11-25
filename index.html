@@ -146,8 +146,21 @@ function srcBadge(s){
   return `<span class="badge-src" style="background:${b.color}">${b.label}</span>`;
 }
 
+function ytThumbId(c){
+  if(c.youtube_id) return c.youtube_id;
+  const m = String(c.source_url || "").match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/|\/v\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : "";
+}
+// 썸네일 우선순위: 저장된 thumb_url → YouTube 영상 ID 썸네일(thumbs/ 폴더가 저장소에 없음) → thumb_rel
+function thumbOf(c){
+  if(c.thumb_url) return c.thumb_url;
+  const id = ytThumbId(c);
+  if(id) return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+  return c.thumb_rel || "";
+}
+
 function cardHtml(c){
-  const thumb = c.thumb_rel ? `${c.thumb_rel}` : (c.thumb_url || "");
+  const thumb = thumbOf(c);
   const aspectClass = c.aspect || "horizontal";
   const len = fmt_dur(c.duration);
   const ttl = c.title || c.filename || "";
